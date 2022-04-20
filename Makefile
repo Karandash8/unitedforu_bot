@@ -40,7 +40,13 @@ run :
 		make stop ; \
 	fi
 	@echo "Starting unitedforu-bot container"
-	@docker run -itd -e API_TOKEN=$(API_TOKEN) --name $(CONTAINER_NAME) $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
+	@docker run -itd \
+	-e TELEGRAM_API_TOKEN=$(TELEGRAM_API_TOKEN) \
+	-e GOOGLE_SPREADSHEET_ID=$(GOOGLE_SPREADSHEET_ID) \
+	-e GOOGLE_RANGE_NAME=$(GOOGLE_RANGE_NAME) \
+	-e GOOGLE_APPLICATION_CREDENTIALS_PATH=$(GOOGLE_APPLICATION_CREDENTIALS_PATH) \
+	-v `pwd`/.service_account.json:/root/.service_account.json \
+	--name $(CONTAINER_NAME) $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
 	@echo "Done"
 
 # stop unitedforu-bot container

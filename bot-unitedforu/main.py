@@ -11,8 +11,14 @@ from telegram.ext import (
     ConversationHandler,
     CallbackContext,
 )
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google.oauth2 import service_account
 
-API_TOKEN = os.getenv("API_TOKEN")
+TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
+GOOGLE_SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID")
+GOOGLE_RANGE_NAME = os.getenv("GOOGLE_RANGE_NAME")
+GOOGLE_APPLICATION_CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH")
 
 # Enable logging
 logging.basicConfig(
@@ -107,11 +113,44 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
 def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
     logger.info(">> func ask_for_help_finish")
 
-    update.message.reply_text('Here is what you told us:')
+    values = [[], []]
+    # update.message.reply_text('Here is what you told us:')
     for k,v in context.user_data['qa'].items():
-        update.message.reply_text('{}: {}'.format(k, v))
+        # update.message.reply_text('{}: {}'.format(k, v))
+        values[0].append(k)
+        values[1].append(v)
+
+    store_in_spreadsheet(GOOGLE_SPREADSHEET_ID, GOOGLE_RANGE_NAME, "USER_ENTERED", values)
 
     return DONE_SUBCONV
+
+'''
+Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
+Issue 2: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
+'''
+def store_in_spreadsheet(spreadsheet_id, range_name, value_input_option,
+                  _values):
+    logger.info(">> func store_in_spreadsheet")
+
+    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(GOOGLE_APPLICATION_CREDENTIALS_PATH))
+
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+
+        values = _values
+        body = {
+            'values': values
+        }
+        result = service.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id, range=range_name,
+            valueInputOption=value_input_option, body=body).execute()
+
+        logger.info(f"{(result.get('updates').get('updatedCells'))} cells appended.")
+        return result
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return error
 
 def done(update: Update, context: CallbackContext) -> int:
     """Display the gathered info and end the conversation."""
@@ -122,7 +161,7 @@ def done(update: Update, context: CallbackContext) -> int:
 def main() -> None:
     """Run the bot."""
     # Create the Updater and pass it your bot's token.
-    updater = Updater(token=API_TOKEN)
+    updater = Updater(token=TELEGRAM_API_TOKEN)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
