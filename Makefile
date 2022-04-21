@@ -42,6 +42,7 @@ run :
 	@echo "Starting unitedforu-bot container"
 	@docker run -itd \
 	-e TELEGRAM_API_TOKEN=$(TELEGRAM_API_TOKEN) \
+	-e TELEGRAM_LIST_OF_ADMIN_IDS=$(TELEGRAM_LIST_OF_ADMIN_IDS) \
 	-e GOOGLE_SPREADSHEET_ID=$(GOOGLE_SPREADSHEET_ID) \
 	-e GOOGLE_RANGE_NAME=$(GOOGLE_RANGE_NAME) \
 	-e GOOGLE_APPLICATION_CREDENTIALS_PATH=$(GOOGLE_APPLICATION_CREDENTIALS_PATH) \
@@ -53,4 +54,23 @@ run :
 stop :
 	@echo "Stopping and removing unitedforu-bot container"
 	@docker container rm -f $(CONTAINER_NAME)
+	@echo "Done"
+
+# run a container from unitedforu-bot image and mount local bot folder.
+# This helps to avoid rebuilding the image on every change.
+debug : CONTAINER_STATUS := `docker container ls -a | grep $(CONTAINER_NAME)`
+debug :
+	@if [ -n "$(CONTAINER_STATUS)" ] ; then \
+		make stop ; \
+	fi
+	@echo "Starting unitedforu-bot container in debug mode"
+	@docker run -itd \
+	-e TELEGRAM_API_TOKEN=$(TELEGRAM_API_TOKEN) \
+	-e TELEGRAM_LIST_OF_ADMIN_IDS=$(TELEGRAM_LIST_OF_ADMIN_IDS) \
+	-e GOOGLE_SPREADSHEET_ID=$(GOOGLE_SPREADSHEET_ID) \
+	-e GOOGLE_RANGE_NAME=$(GOOGLE_RANGE_NAME) \
+	-e GOOGLE_APPLICATION_CREDENTIALS_PATH=$(GOOGLE_APPLICATION_CREDENTIALS_PATH) \
+	-v `pwd`/.service_account.json:/root/.service_account.json \
+	-v `pwd`/bot-unitedforu:/bot-unitedforu \
+	--name $(CONTAINER_NAME) $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
 	@echo "Done"

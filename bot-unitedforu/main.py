@@ -16,9 +16,12 @@ from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
 
 TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
+TELEGRAM_LIST_OF_ADMIN_IDS = os.getenv("TELEGRAM_LIST_OF_ADMIN_IDS")
 GOOGLE_SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID")
 GOOGLE_RANGE_NAME = os.getenv("GOOGLE_RANGE_NAME")
 GOOGLE_APPLICATION_CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH")
+
+ADMINS_ONLINE = []
 
 # Enable logging
 logging.basicConfig(
@@ -64,6 +67,23 @@ def start(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(
         "Hi! I am UnitedForU bot. How can I help?",
         reply_markup=markup,
+    )
+
+    return MAIN_MENU
+
+def register_admin(update: Update, context: CallbackContext) -> int:
+    logger.info(">> func register_admin")
+
+    list_of_admin_ids = TELEGRAM_LIST_OF_ADMIN_IDS.split(',') if TELEGRAM_LIST_OF_ADMIN_IDS else []
+    list_of_admin_ids = map(int, list_of_admin_ids)
+    user_id = update.effective_user.id
+
+    if user_id in list_of_admin_ids:
+        ADMINS_ONLINE.append(user_id)
+
+        update.message.reply_text(
+            "You logged in as an admin.",
+            reply_markup=markup,
     )
 
     return MAIN_MENU
@@ -121,8 +141,15 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
         values[1].append(v)
 
     store_in_spreadsheet(GOOGLE_SPREADSHEET_ID, GOOGLE_RANGE_NAME, "USER_ENTERED", values)
+    inform_admins(update)
 
     return DONE_SUBCONV
+
+
+def inform_admins(update: Update):
+    logger.info(">> func inform_admins")
+    for admin_id in ADMINS_ONLINE:
+        update.message.bot.send_message(chat_id=admin_id, text="New requet for help was added.")
 
 '''
 Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
@@ -194,6 +221,7 @@ def main() -> None:
                 ask_for_help_conv,
                 MessageHandler(Filters.regex('^Get information$'), get_information),
                 MessageHandler(Filters.regex('^FAQ$'), faq),
+                CommandHandler('admin', register_admin),
             ],
         },
         fallbacks=[MessageHandler(Filters.regex('^Done$'), done)],
