@@ -1,5 +1,6 @@
 # COMMON SETUP
 Follow https://developers.google.com/workspace/guides/get-started and save your service_account credentials in .service_account.json
+In order to find your Telegram ID, just start conversation with 'userinfobot'
 ```
 cp .service_account.json ~/.service_account.json
 echo 'TELEGRAM_API_TOKEN="<YOUR_TOKEN>"' > .env
