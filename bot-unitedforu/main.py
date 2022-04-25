@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from typing import Dict
 
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove
@@ -133,23 +134,31 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
 def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
     logger.info(">> func ask_for_help_finish")
 
-    values = [[], []]
-    # update.message.reply_text('Here is what you told us:')
-    for k,v in context.user_data['qa'].items():
-        # update.message.reply_text('{}: {}'.format(k, v))
-        values[0].append(k)
-        values[1].append(v)
+    chat = update['message']['chat']
+    values = {
+        'first_name'    : chat['first_name'],
+        'last_name'     : chat['last_name'],
+        'telegram_id'   : chat['id'],
+        'time'          : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    values.update(context.user_data['qa'])
 
     store_in_spreadsheet(GOOGLE_SPREADSHEET_ID, GOOGLE_RANGE_NAME, "USER_ENTERED", values)
     inform_admins(update)
 
     return DONE_SUBCONV
 
-
 def inform_admins(update: Update):
     logger.info(">> func inform_admins")
     for admin_id in ADMINS_ONLINE:
-        update.message.bot.send_message(chat_id=admin_id, text="New requet for help was added.")
+        update.message.bot.send_message(chat_id=admin_id, text="New request for help was added.")
+
+def dict_to_cells(map):
+    values = [[], []]
+    for k,v in map.items():
+        values[0].append(k)
+        values[1].append(v)
+    return values
 
 '''
 Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
@@ -164,9 +173,8 @@ def store_in_spreadsheet(spreadsheet_id, range_name, value_input_option,
     try:
         service = build('sheets', 'v4', credentials=creds)
 
-        values = _values
         body = {
-            'values': values
+            'values': dict_to_cells(_values)
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range=range_name,
