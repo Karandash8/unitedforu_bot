@@ -36,26 +36,19 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-reply_keyboard = [
-    ['Ask for help', 'Get information', 'FAQ'],
-    ['Done'],
-]
-markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-
 # main states
 MAIN_MENU, DONE_SUBCONV = range(2)
 
 ids = []
 substate_data = {}
+resource = {}
+markup = None
 
 def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and ask user for input."""
     logger.info(">> func start")
 
-    update.message.reply_text(
-        "Hi! I am UnitedForU bot. How can I help?",
-        reply_markup=markup,
-    )
+    update.message.reply_text(resource['hello'], reply_markup=markup)
     return MAIN_MENU
 
 def register_admin(update: Update, context: CallbackContext) -> int:
@@ -70,26 +63,22 @@ def register_admin(update: Update, context: CallbackContext) -> int:
 
         update.message.reply_text(
             "You logged in as an admin.",
-            reply_markup=markup,
-    )
+            reply_markup=markup)
     return MAIN_MENU
 
 def ask_for_help_start(update: Update, context: CallbackContext) -> int:
     """The user wants to ask for help. Child conversation gathers all necessary info"""
     logger.info(">> func ask_for_help_start")
 
-    text = 'Please give us some information.'
-    update.message.reply_text(text)
-
+    update.message.reply_text(resource['give_info'])
     context.user_data['substate'] = ids[0]
     write_substate_text(context.user_data['substate'], update, context)
-
     return context.user_data['substate']
 
 def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
     data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
-    text = "Information.\n"
+    text = resource['info'] + ".\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
 
@@ -99,7 +88,7 @@ def get_information(update: Update, context: CallbackContext) -> int:
 def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
     data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
-    text = "FAQ.\n"
+    text = resource['faq'] + ".\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
 
@@ -140,7 +129,6 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
 
     store_in_spreadsheet(STORE_SHEET_ID, values)
     inform_admins(update)
-
     return DONE_SUBCONV
 
 def inform_admins(update: Update):
@@ -164,7 +152,7 @@ def get_states(questions, ids):
         }
     return states
 
-def dict_to_cells(map):
+def dict_to_cell(map):
     values = [[], []]
     for k,v in map.items():
         values[0].append(k)
@@ -197,7 +185,7 @@ def store_in_spreadsheet(spreadsheet_id, values, range_name='Sheet1'):
     try:
         service = get_sheet_service()
         body = {
-            'values': dict_to_cells(values)
+            'values': dict_to_cell(values)
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range=range_name,
@@ -219,7 +207,18 @@ def done(update: Update, context: CallbackContext) -> int:
 def main() -> None:
     """Run the bot."""
 
-    # Load questions from sheet
+    global resource
+    cells = read_spreadsheet(LOAD_SHEET_ID, RESOURCE_SHEET_RANGE)
+    resource = { cell[0] : cell[1] for cell in cells }
+    logger.info(resource)
+
+    reply_keyboard = [
+        [resource['ask_help'], resource['info'], resource['faq']],
+        [resource['done']],
+    ]
+    global markup
+    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
     questions = read_spreadsheet(LOAD_SHEET_ID, QUESTIONS_SHEET_RANGE)
     global ids
     ids = get_ids(questions, 2)
@@ -237,7 +236,7 @@ def main() -> None:
 
     ask_for_help_conv = ConversationHandler(
         entry_points=[
-            MessageHandler(Filters.regex('^Ask for help$'), ask_for_help_start),
+            MessageHandler(Filters.regex(f"^{resource['ask_help']}$"), ask_for_help_start),
         ],
         states = { id : [ MessageHandler(Filters.text, handle_reply) ] for id in ids },
         fallbacks=[MessageHandler(Filters.text, ask_for_help_finish)],
@@ -251,12 +250,12 @@ def main() -> None:
         states={
             MAIN_MENU: [
                 ask_for_help_conv,
-                MessageHandler(Filters.regex('^Get information$'), get_information),
-                MessageHandler(Filters.regex('^FAQ$'), faq),
+                MessageHandler(Filters.regex(f"^{resource['info']}$"), get_information),
+                MessageHandler(Filters.regex(f"^{resource['faq']}$"), faq),
                 CommandHandler('admin', register_admin),
             ],
         },
-        fallbacks=[MessageHandler(Filters.regex('^Done$'), done)],
+        fallbacks=[MessageHandler(Filters.regex(f"^{resource['done']}$"), done)],
     )
 
     dispatcher.add_handler(conv_handler)

@@ -39,5 +39,3 @@ pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-
 ```
 python bot-unitedforu/main.py
 ```
-test
-
