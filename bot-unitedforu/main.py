@@ -22,6 +22,7 @@ STORE_SHEET_ID = os.getenv("STORE_SHEET_ID")
 STORE_SHEET_RANGE = os.getenv("STORE_SHEET_RANGE")
 INFO_SHEET_ID = os.getenv("INFO_SHEET_ID")
 FAQ_SHEET_ID = os.getenv("FAQ_SHEET_ID")
+QUESTIONS_SHEET_ID = os.getenv("QUESTIONS_SHEET_ID")
 SHEET_CREDENTIALS_PATH = os.getenv("SHEET_CREDENTIALS_PATH")
 
 ADMINS_ONLINE = []
@@ -40,28 +41,51 @@ reply_keyboard = [
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
 
 # main states
-MAIN_MENU = range(3)
+MAIN_MENU, DONE_SUBCONV = range(2)
 
-# ASK_FOR_HELP substates
-GETTING_LOCATION, GETTING_NUMBER_OF_PEOPLE, GETTING_BELONGINGS, FINISHING_SUBCONV, DONE_SUBCONV = range(3, 8)
-substate_data = {
-    GETTING_LOCATION: {
-        "text": "Where are you?",
-        "markup": None,
-    },
-    GETTING_NUMBER_OF_PEOPLE: {
-        "text": "How many are you?",
-        "markup": None,
-    },
-    GETTING_BELONGINGS: {
-        "text": "Do you have necessary clothes with you?",
-        "markup": None,
-    },
-    FINISHING_SUBCONV: {
-        "text": "Thank you for the information",
-        "markup": markup,
-    },
-}
+def get_sheet_service():
+    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
+    service = build('sheets', 'v4', credentials=creds)
+    return service
+
+def read_spreadsheet(spreadsheet_id, range_name='Sheet1'):
+    logger.info(">> func read_spreadsheet")
+    try:
+        service = get_sheet_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        return values
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return {}
+
+def get_ids(questions, start):
+    ids = []
+    for question in questions:
+        ids.append(start)
+        start = start + 1
+    return ids
+
+def get_states(questions, ids):
+    states = {}
+    for index, id in enumerate(ids):
+        states[id] = {
+            "text": questions[index][0],
+            "markup": None if index < len(ids) - 1 else markup
+        }
+    return states
+
+# Load questions from sheet
+questions = read_spreadsheet(QUESTIONS_SHEET_ID)
+
+ids = get_ids(questions, 2)
+logger.info(ids)
+
+substate_data = get_states(questions, ids)
+logger.info(substate_data)
+
 
 def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and ask user for input."""
@@ -98,14 +122,14 @@ def ask_for_help_start(update: Update, context: CallbackContext) -> int:
     text = 'Please give us some information.'
     update.message.reply_text(text)
 
-    context.user_data['substate'] = GETTING_LOCATION
+    context.user_data['substate'] = ids[0]
     write_substate_text(context.user_data['substate'], update, context)
 
     return context.user_data['substate']
 
 def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
-    data = read_spreadsheet(INFO_SHEET_ID, 'Sheet1')
+    data = read_spreadsheet(INFO_SHEET_ID)
     text = "Information.\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
@@ -115,7 +139,7 @@ def get_information(update: Update, context: CallbackContext) -> int:
 
 def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
-    data = read_spreadsheet(FAQ_SHEET_ID, 'Sheet1')
+    data = read_spreadsheet(FAQ_SHEET_ID)
     text = "FAQ.\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
@@ -138,7 +162,7 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
     context.user_data['substate'] += 1
     write_substate_text(context.user_data['substate'], update, context)
 
-    if context.user_data['substate'] < FINISHING_SUBCONV:
+    if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
     else: 
         return ask_for_help_finish(update, context)
@@ -172,11 +196,6 @@ def dict_to_cells(map):
         values[1].append(v)
     return values
 
-def get_sheet_service():
-    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
-    service = build('sheets', 'v4', credentials=creds)
-    return service
-
 '''
 Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
 Issue 2: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
@@ -186,7 +205,7 @@ def store_in_spreadsheet(spreadsheet_id, range_name, values):
     try:
         service = get_sheet_service()
         body = {
-            'values': dict_to_cells(_values)
+            'values': dict_to_cells(values)
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range=range_name,
@@ -198,19 +217,6 @@ def store_in_spreadsheet(spreadsheet_id, range_name, values):
     except HttpError as error:
         print(f"An error occurred: {error}")
         return error
-
-def read_spreadsheet(spreadsheet_id, range_name):
-    logger.info(">> func read_spreadsheet")
-    try:
-        service = get_sheet_service()
-        result = service.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id, range=range_name).execute()
-        values = result.get('values', [])
-        return values
-
-    except HttpError as error:
-        print(f"An error occurred: {error}")
-        return {}
 
 def done(update: Update, context: CallbackContext) -> int:
     """Display the gathered info and end the conversation."""
@@ -230,17 +236,7 @@ def main() -> None:
         entry_points=[
             MessageHandler(Filters.regex('^Ask for help$'), ask_for_help_start),
         ],
-        states={
-            GETTING_LOCATION: [
-                MessageHandler(Filters.text, handle_reply)
-            ],
-            GETTING_NUMBER_OF_PEOPLE: [
-                MessageHandler(Filters.text, handle_reply)
-            ],
-            GETTING_BELONGINGS: [
-                MessageHandler(Filters.text, handle_reply),
-            ],
-        },
+        states = { id : [ MessageHandler(Filters.text, handle_reply) ] for id in ids },
         fallbacks=[MessageHandler(Filters.text, ask_for_help_finish)],
         map_to_parent={
             DONE_SUBCONV: MAIN_MENU
@@ -264,10 +260,6 @@ def main() -> None:
 
     # Start the Bot
     updater.start_polling()
-
-    # Run the bot until you press Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT. This should be used most of the time, since
-    # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
 
 

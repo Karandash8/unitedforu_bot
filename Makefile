@@ -47,6 +47,7 @@ run :
 	-e STORE_SHEET_RANGE=$(STORE_SHEET_RANGE) \
 	-e INFO_SHEET_ID=$(INFO_SHEET_ID) \
 	-e FAQ_SHEET_ID=$(FAQ_SHEET_ID) \
+	-e QUESTIONS_SHEET_ID=$(QUESTIONS_SHEET_ID) \
 	-e SHEET_CREDENTIALS_PATH=$(SHEET_CREDENTIALS_PATH) \
 	-v `pwd`/.service_account.json:/root/.service_account.json \
 	--name $(CONTAINER_NAME) $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
@@ -73,6 +74,7 @@ debug :
 	-e STORE_SHEET_RANGE=$(STORE_SHEET_RANGE) \
 	-e INFO_SHEET_ID=$(INFO_SHEET_ID) \
 	-e FAQ_SHEET_ID=$(FAQ_SHEET_ID) \
+	-e QUESTIONS_SHEET_ID=$(QUESTIONS_SHEET_ID) \
 	-e SHEET_CREDENTIALS_PATH=$(SHEET_CREDENTIALS_PATH) \
 	-v `pwd`/.service_account.json:/root/.service_account.json \
 	-v `pwd`/bot-unitedforu:/bot-unitedforu \
