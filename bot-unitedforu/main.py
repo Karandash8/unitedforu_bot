@@ -19,11 +19,13 @@ from google.oauth2 import service_account
 TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
 TELEGRAM_LIST_OF_ADMIN_IDS = os.getenv("TELEGRAM_LIST_OF_ADMIN_IDS")
 STORE_SHEET_ID = os.getenv("STORE_SHEET_ID")
-STORE_SHEET_RANGE = os.getenv("STORE_SHEET_RANGE")
-INFO_SHEET_ID = os.getenv("INFO_SHEET_ID")
-FAQ_SHEET_ID = os.getenv("FAQ_SHEET_ID")
-QUESTIONS_SHEET_ID = os.getenv("QUESTIONS_SHEET_ID")
+LOAD_SHEET_ID = os.getenv("LOAD_SHEET_ID")
 SHEET_CREDENTIALS_PATH = os.getenv("SHEET_CREDENTIALS_PATH")
+
+RESOURCE_SHEET_RANGE = 'Resource'
+QUESTIONS_SHEET_RANGE = 'Questions'
+INFO_SHEET_RANGE = 'Info'
+FAQ_SHEET_RANGE = 'FAQ'
 
 ADMINS_ONLINE = []
 
@@ -43,49 +45,8 @@ markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
 # main states
 MAIN_MENU, DONE_SUBCONV = range(2)
 
-def get_sheet_service():
-    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
-    service = build('sheets', 'v4', credentials=creds)
-    return service
-
-def read_spreadsheet(spreadsheet_id, range_name='Sheet1'):
-    logger.info(">> func read_spreadsheet")
-    try:
-        service = get_sheet_service()
-        result = service.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id, range=range_name).execute()
-        values = result.get('values', [])
-        return values
-
-    except HttpError as error:
-        print(f"An error occurred: {error}")
-        return {}
-
-def get_ids(questions, start):
-    ids = []
-    for question in questions:
-        ids.append(start)
-        start = start + 1
-    return ids
-
-def get_states(questions, ids):
-    states = {}
-    for index, id in enumerate(ids):
-        states[id] = {
-            "text": questions[index][0],
-            "markup": None if index < len(ids) - 1 else markup
-        }
-    return states
-
-# Load questions from sheet
-questions = read_spreadsheet(QUESTIONS_SHEET_ID)
-
-ids = get_ids(questions, 2)
-logger.info(ids)
-
-substate_data = get_states(questions, ids)
-logger.info(substate_data)
-
+ids = []
+substate_data = {}
 
 def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and ask user for input."""
@@ -95,7 +56,6 @@ def start(update: Update, context: CallbackContext) -> int:
         "Hi! I am UnitedForU bot. How can I help?",
         reply_markup=markup,
     )
-
     return MAIN_MENU
 
 def register_admin(update: Update, context: CallbackContext) -> int:
@@ -112,7 +72,6 @@ def register_admin(update: Update, context: CallbackContext) -> int:
             "You logged in as an admin.",
             reply_markup=markup,
     )
-
     return MAIN_MENU
 
 def ask_for_help_start(update: Update, context: CallbackContext) -> int:
@@ -129,7 +88,7 @@ def ask_for_help_start(update: Update, context: CallbackContext) -> int:
 
 def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
-    data = read_spreadsheet(INFO_SHEET_ID)
+    data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
     text = "Information.\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
@@ -139,7 +98,7 @@ def get_information(update: Update, context: CallbackContext) -> int:
 
 def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
-    data = read_spreadsheet(FAQ_SHEET_ID)
+    data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
     text = "FAQ.\n"
     for elem in data[1:]:
         text += elem[1] + "\n"
@@ -179,7 +138,7 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
     }
     values.update(context.user_data['qa'])
 
-    store_in_spreadsheet(STORE_SHEET_ID, STORE_SHEET_RANGE, values)
+    store_in_spreadsheet(STORE_SHEET_ID, values)
     inform_admins(update)
 
     return DONE_SUBCONV
@@ -189,6 +148,22 @@ def inform_admins(update: Update):
     for admin_id in ADMINS_ONLINE:
         update.message.bot.send_message(chat_id=admin_id, text="New request for help was added.")
 
+def get_ids(questions, start):
+    ids = []
+    for question in questions:
+        ids.append(start)
+        start = start + 1
+    return ids
+
+def get_states(questions, ids):
+    states = {}
+    for index, id in enumerate(ids):
+        states[id] = {
+            "text": questions[index][0],
+            "markup": None if index < len(ids) - 1 else markup
+        }
+    return states
+
 def dict_to_cells(map):
     values = [[], []]
     for k,v in map.items():
@@ -196,11 +171,28 @@ def dict_to_cells(map):
         values[1].append(v)
     return values
 
+def get_sheet_service():
+    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
+    service = build('sheets', 'v4', credentials=creds)
+    return service
+
+def read_spreadsheet(spreadsheet_id, range_name='Sheet1'):
+    logger.info(">> func read_spreadsheet")
+    try:
+        service = get_sheet_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        return values
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return {}
+
 '''
-Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
-Issue 2: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
+Issue 1: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
 '''
-def store_in_spreadsheet(spreadsheet_id, range_name, values):
+def store_in_spreadsheet(spreadsheet_id, values, range_name='Sheet1'):
     logger.info(">> func store_in_spreadsheet")
     try:
         service = get_sheet_service()
@@ -226,6 +218,17 @@ def done(update: Update, context: CallbackContext) -> int:
 
 def main() -> None:
     """Run the bot."""
+
+    # Load questions from sheet
+    questions = read_spreadsheet(LOAD_SHEET_ID, QUESTIONS_SHEET_RANGE)
+    global ids
+    ids = get_ids(questions, 2)
+    logger.info(ids)
+
+    global substate_data
+    substate_data = get_states(questions, ids)
+    logger.info(substate_data)
+
     # Create the Updater and pass it your bot's token.
     updater = Updater(token=TELEGRAM_API_TOKEN)
 

@@ -6,10 +6,7 @@ cp .service_account.json ~/.service_account.json
 echo 'TELEGRAM_API_TOKEN="<YOUR_TOKEN>"' > .env
 echo 'TELEGRAM_LIST_OF_ADMIN_IDS="<COMMA_SEPARATED_LIST_OF_TELEGRAM_USER_IDS>"' >> .env
 echo 'STORE_SHEET_ID="<YOUR_STORE_SPREADSHEET_ID>"' >> .env
-echo 'STORE_SHEET_RANGE="A1:C2"' >> .env
-echo 'INFO_SHEET_ID="<YOUR_INFO_SPREADSHEET_ID>"' >> .env
-echo 'FAQ_SHEET_ID="<YOUR_FAQ_SPREADSHEET_ID>"' >> .env
-echo 'QUESTIONS_SHEET_ID="<YOUR_QUESTIONS_SPREADSHEET_ID>"' >> .env
+echo 'LOAD_SHEET_ID="<YOUR_LOAD_SPREADSHEET_ID>"' >> .env
 echo 'SHEET_CREDENTIALS_PATH="~/.service_account.json"' >> .env
 export $(grep -v '^#' .env | xargs)
 ```
