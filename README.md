@@ -5,9 +5,11 @@ In order to find your Telegram ID, just start conversation with 'userinfobot'
 cp .service_account.json ~/.service_account.json
 echo 'TELEGRAM_API_TOKEN="<YOUR_TOKEN>"' > .env
 echo 'TELEGRAM_LIST_OF_ADMIN_IDS="<COMMA_SEPARATED_LIST_OF_TELEGRAM_USER_IDS>"' >> .env
-echo 'GOOGLE_SPREADSHEET_ID="<YOUR_SPREADSHEET_ID>"' >> .env
-echo 'GOOGLE_RANGE_NAME="A1:C2"' >> .env
-echo 'GOOGLE_APPLICATION_CREDENTIALS_PATH="~/.service_account.json"' >> .env
+echo 'STORE_SHEET_ID="<YOUR_STORE_SPREADSHEET_ID>"' >> .env
+echo 'STORE_SHEET_RANGE="A1:C2"' >> .env
+echo 'INFO_SHEET_ID="<YOUR_INFO_SPREADSHEET_ID>"' >> .env
+echo 'FAQ_SHEET_ID="<YOUR_FAQ_SPREADSHEET_ID>"' >> .env
+echo 'SHEET_CREDENTIALS_PATH="~/.service_account.json"' >> .env
 export $(grep -v '^#' .env | xargs)
 ```
 

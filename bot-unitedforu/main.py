@@ -18,9 +18,11 @@ from google.oauth2 import service_account
 
 TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
 TELEGRAM_LIST_OF_ADMIN_IDS = os.getenv("TELEGRAM_LIST_OF_ADMIN_IDS")
-GOOGLE_SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID")
-GOOGLE_RANGE_NAME = os.getenv("GOOGLE_RANGE_NAME")
-GOOGLE_APPLICATION_CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH")
+STORE_SHEET_ID = os.getenv("STORE_SHEET_ID")
+STORE_SHEET_RANGE = os.getenv("STORE_SHEET_RANGE")
+INFO_SHEET_ID = os.getenv("INFO_SHEET_ID")
+FAQ_SHEET_ID = os.getenv("FAQ_SHEET_ID")
+SHEET_CREDENTIALS_PATH = os.getenv("SHEET_CREDENTIALS_PATH")
 
 ADMINS_ONLINE = []
 
@@ -103,12 +105,22 @@ def ask_for_help_start(update: Update, context: CallbackContext) -> int:
 
 def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
-    update.message.reply_text("INFORMATION", reply_markup=markup)
+    data = read_spreadsheet(INFO_SHEET_ID, 'Sheet1')
+    text = "Information.\n"
+    for elem in data[1:]:
+        text += elem[1] + "\n"
+
+    update.message.reply_text(text, reply_markup=markup)
     return MAIN_MENU
 
 def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
-    update.message.reply_text("FAQ", reply_markup=markup)
+    data = read_spreadsheet(FAQ_SHEET_ID, 'Sheet1')
+    text = "FAQ.\n"
+    for elem in data[1:]:
+        text += elem[1] + "\n"
+
+    update.message.reply_text(text, reply_markup=markup)
     return MAIN_MENU
 
 def write_substate_text(substate: int, update: Update, context: CallbackContext):
@@ -143,7 +155,7 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
     }
     values.update(context.user_data['qa'])
 
-    store_in_spreadsheet(GOOGLE_SPREADSHEET_ID, GOOGLE_RANGE_NAME, "USER_ENTERED", values)
+    store_in_spreadsheet(STORE_SHEET_ID, STORE_SHEET_RANGE, values)
     inform_admins(update)
 
     return DONE_SUBCONV
@@ -160,25 +172,25 @@ def dict_to_cells(map):
         values[1].append(v)
     return values
 
+def get_sheet_service():
+    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
+    service = build('sheets', 'v4', credentials=creds)
+    return service
+
 '''
 Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
 Issue 2: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
 '''
-def store_in_spreadsheet(spreadsheet_id, range_name, value_input_option,
-                  _values):
+def store_in_spreadsheet(spreadsheet_id, range_name, values):
     logger.info(">> func store_in_spreadsheet")
-
-    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(GOOGLE_APPLICATION_CREDENTIALS_PATH))
-
     try:
-        service = build('sheets', 'v4', credentials=creds)
-
+        service = get_sheet_service()
         body = {
             'values': dict_to_cells(_values)
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range=range_name,
-            valueInputOption=value_input_option, body=body).execute()
+            valueInputOption="USER_ENTERED", body=body).execute()
 
         logger.info(f"{(result.get('updates').get('updatedCells'))} cells appended.")
         return result
@@ -186,6 +198,19 @@ def store_in_spreadsheet(spreadsheet_id, range_name, value_input_option,
     except HttpError as error:
         print(f"An error occurred: {error}")
         return error
+
+def read_spreadsheet(spreadsheet_id, range_name):
+    logger.info(">> func read_spreadsheet")
+    try:
+        service = get_sheet_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        return values
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return {}
 
 def done(update: Update, context: CallbackContext) -> int:
     """Display the gathered info and end the conversation."""
