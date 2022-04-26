@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from typing import Dict
 
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove
@@ -17,9 +18,14 @@ from google.oauth2 import service_account
 
 TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
 TELEGRAM_LIST_OF_ADMIN_IDS = os.getenv("TELEGRAM_LIST_OF_ADMIN_IDS")
-GOOGLE_SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID")
-GOOGLE_RANGE_NAME = os.getenv("GOOGLE_RANGE_NAME")
-GOOGLE_APPLICATION_CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH")
+STORE_SHEET_ID = os.getenv("STORE_SHEET_ID")
+LOAD_SHEET_ID = os.getenv("LOAD_SHEET_ID")
+SHEET_CREDENTIALS_PATH = os.getenv("SHEET_CREDENTIALS_PATH")
+
+RESOURCE_SHEET_RANGE = 'Resource'
+QUESTIONS_SHEET_RANGE = 'Questions'
+INFO_SHEET_RANGE = 'Info'
+FAQ_SHEET_RANGE = 'FAQ'
 
 ADMINS_ONLINE = []
 
@@ -30,45 +36,19 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-reply_keyboard = [
-    ['Ask for help', 'Get information', 'FAQ'],
-    ['Done'],
-]
-markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-
 # main states
-MAIN_MENU = range(3)
+MAIN_MENU, DONE_SUBCONV = range(2)
 
-# ASK_FOR_HELP substates
-GETTING_LOCATION, GETTING_NUMBER_OF_PEOPLE, GETTING_BELONGINGS, FINISHING_SUBCONV, DONE_SUBCONV = range(3, 8)
-substate_data = {
-    GETTING_LOCATION: {
-        "text": "Where are you?",
-        "markup": None,
-    },
-    GETTING_NUMBER_OF_PEOPLE: {
-        "text": "How many are you?",
-        "markup": None,
-    },
-    GETTING_BELONGINGS: {
-        "text": "Do you have necessary clothes with you?",
-        "markup": None,
-    },
-    FINISHING_SUBCONV: {
-        "text": "Thank you for the information",
-        "markup": markup,
-    },
-}
+ids = []
+substate_data = {}
+resource = {}
+markup = None
 
 def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and ask user for input."""
     logger.info(">> func start")
 
-    update.message.reply_text(
-        "Hi! I am UnitedForU bot. How can I help?",
-        reply_markup=markup,
-    )
-
+    update.message.reply_text(resource['hello'], reply_markup=markup)
     return MAIN_MENU
 
 def register_admin(update: Update, context: CallbackContext) -> int:
@@ -83,31 +63,36 @@ def register_admin(update: Update, context: CallbackContext) -> int:
 
         update.message.reply_text(
             "You logged in as an admin.",
-            reply_markup=markup,
-    )
-
+            reply_markup=markup)
     return MAIN_MENU
 
 def ask_for_help_start(update: Update, context: CallbackContext) -> int:
     """The user wants to ask for help. Child conversation gathers all necessary info"""
     logger.info(">> func ask_for_help_start")
 
-    text = 'Please give us some information.'
-    update.message.reply_text(text)
-
-    context.user_data['substate'] = GETTING_LOCATION
+    update.message.reply_text(resource['give_info'])
+    context.user_data['substate'] = ids[0]
     write_substate_text(context.user_data['substate'], update, context)
-
     return context.user_data['substate']
 
 def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
-    update.message.reply_text("INFORMATION", reply_markup=markup)
+    data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
+    text = resource['info'] + ".\n"
+    for elem in data[1:]:
+        text += elem[1] + "\n"
+
+    update.message.reply_text(text, reply_markup=markup)
     return MAIN_MENU
 
 def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
-    update.message.reply_text("FAQ", reply_markup=markup)
+    data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
+    text = resource['faq'] + ".\n"
+    for elem in data[1:]:
+        text += elem[1] + "\n"
+
+    update.message.reply_text(text, reply_markup=markup)
     return MAIN_MENU
 
 def write_substate_text(substate: int, update: Update, context: CallbackContext):
@@ -125,7 +110,7 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
     context.user_data['substate'] += 1
     write_substate_text(context.user_data['substate'], update, context)
 
-    if context.user_data['substate'] < FINISHING_SUBCONV:
+    if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
     else: 
         return ask_for_help_finish(update, context)
@@ -133,44 +118,78 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
 def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
     logger.info(">> func ask_for_help_finish")
 
-    values = [[], []]
-    # update.message.reply_text('Here is what you told us:')
-    for k,v in context.user_data['qa'].items():
-        # update.message.reply_text('{}: {}'.format(k, v))
-        values[0].append(k)
-        values[1].append(v)
+    chat = update['message']['chat']
+    values = {
+        'first_name'    : chat['first_name'],
+        'last_name'     : chat['last_name'],
+        'telegram_id'   : chat['id'],
+        'time'          : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    values.update(context.user_data['qa'])
 
-    store_in_spreadsheet(GOOGLE_SPREADSHEET_ID, GOOGLE_RANGE_NAME, "USER_ENTERED", values)
+    store_in_spreadsheet(STORE_SHEET_ID, values)
     inform_admins(update)
-
     return DONE_SUBCONV
-
 
 def inform_admins(update: Update):
     logger.info(">> func inform_admins")
     for admin_id in ADMINS_ONLINE:
-        update.message.bot.send_message(chat_id=admin_id, text="New requet for help was added.")
+        update.message.bot.send_message(chat_id=admin_id, text="New request for help was added.")
 
-'''
-Issue 1: range_name doesn't seem to make any effect if set incorrectly. New values are always appended starting from the first empty row.
-Issue 2: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
-'''
-def store_in_spreadsheet(spreadsheet_id, range_name, value_input_option,
-                  _values):
-    logger.info(">> func store_in_spreadsheet")
+def get_ids(questions, start):
+    ids = []
+    for question in questions:
+        ids.append(start)
+        start = start + 1
+    return ids
 
-    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(GOOGLE_APPLICATION_CREDENTIALS_PATH))
+def get_states(questions, ids):
+    states = {}
+    for index, id in enumerate(ids):
+        states[id] = {
+            "text": questions[index][0],
+            "markup": None if index < len(ids) - 1 else markup
+        }
+    return states
 
+def dict_to_cell(map):
+    values = [[], []]
+    for k,v in map.items():
+        values[0].append(k)
+        values[1].append(v)
+    return values
+
+def get_sheet_service():
+    creds = service_account.Credentials.from_service_account_file(os.path.expanduser(SHEET_CREDENTIALS_PATH))
+    service = build('sheets', 'v4', credentials=creds)
+    return service
+
+def read_spreadsheet(spreadsheet_id, range_name='Sheet1'):
+    logger.info(">> func read_spreadsheet")
     try:
-        service = build('sheets', 'v4', credentials=creds)
+        service = get_sheet_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        return values
 
-        values = _values
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return {}
+
+'''
+Issue 1: If there is an empty row in the middle of the spreadsheet, new values are added starting from that empty row (might override what is in the next rows).
+'''
+def store_in_spreadsheet(spreadsheet_id, values, range_name='Sheet1'):
+    logger.info(">> func store_in_spreadsheet")
+    try:
+        service = get_sheet_service()
         body = {
-            'values': values
+            'values': dict_to_cell(values)
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range=range_name,
-            valueInputOption=value_input_option, body=body).execute()
+            valueInputOption="USER_ENTERED", body=body).execute()
 
         logger.info(f"{(result.get('updates').get('updatedCells'))} cells appended.")
         return result
@@ -187,6 +206,28 @@ def done(update: Update, context: CallbackContext) -> int:
 
 def main() -> None:
     """Run the bot."""
+
+    global resource
+    cells = read_spreadsheet(LOAD_SHEET_ID, RESOURCE_SHEET_RANGE)
+    resource = { cell[0] : cell[1] for cell in cells }
+    logger.info(resource)
+
+    reply_keyboard = [
+        [resource['ask_help'], resource['info'], resource['faq']],
+        [resource['done']],
+    ]
+    global markup
+    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
+    questions = read_spreadsheet(LOAD_SHEET_ID, QUESTIONS_SHEET_RANGE)
+    global ids
+    ids = get_ids(questions, 2)
+    logger.info(ids)
+
+    global substate_data
+    substate_data = get_states(questions, ids)
+    logger.info(substate_data)
+
     # Create the Updater and pass it your bot's token.
     updater = Updater(token=TELEGRAM_API_TOKEN)
 
@@ -195,19 +236,9 @@ def main() -> None:
 
     ask_for_help_conv = ConversationHandler(
         entry_points=[
-            MessageHandler(Filters.regex('^Ask for help$'), ask_for_help_start),
+            MessageHandler(Filters.regex(f"^{resource['ask_help']}$"), ask_for_help_start),
         ],
-        states={
-            GETTING_LOCATION: [
-                MessageHandler(Filters.text, handle_reply)
-            ],
-            GETTING_NUMBER_OF_PEOPLE: [
-                MessageHandler(Filters.text, handle_reply)
-            ],
-            GETTING_BELONGINGS: [
-                MessageHandler(Filters.text, handle_reply),
-            ],
-        },
+        states = { id : [ MessageHandler(Filters.text, handle_reply) ] for id in ids },
         fallbacks=[MessageHandler(Filters.text, ask_for_help_finish)],
         map_to_parent={
             DONE_SUBCONV: MAIN_MENU
@@ -219,22 +250,18 @@ def main() -> None:
         states={
             MAIN_MENU: [
                 ask_for_help_conv,
-                MessageHandler(Filters.regex('^Get information$'), get_information),
-                MessageHandler(Filters.regex('^FAQ$'), faq),
+                MessageHandler(Filters.regex(f"^{resource['info']}$"), get_information),
+                MessageHandler(Filters.regex(f"^{resource['faq']}$"), faq),
                 CommandHandler('admin', register_admin),
             ],
         },
-        fallbacks=[MessageHandler(Filters.regex('^Done$'), done)],
+        fallbacks=[MessageHandler(Filters.regex(f"^{resource['done']}$"), done)],
     )
 
     dispatcher.add_handler(conv_handler)
 
     # Start the Bot
     updater.start_polling()
-
-    # Run the bot until you press Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT. This should be used most of the time, since
-    # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
 
 
