@@ -79,10 +79,10 @@ def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
     data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
     text = resource['info'] + ".\n"
-    for elem in data[1:]:
+    for elem in data:
         text += elem[1] + "\n"
 
-    update.message.reply_text(text, reply_markup=markup)
+    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
 
 def faq(update: Update, context: CallbackContext) -> int:
@@ -90,10 +90,21 @@ def faq(update: Update, context: CallbackContext) -> int:
     data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
     text = resource['faq'] + ".\n"
     for elem in data[1:]:
-        text += elem[1] + "\n"
+        text += f"/{elem[0]} - {elem[1]}\n"
 
-    update.message.reply_text(text, reply_markup=markup)
+    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
+
+def get_faq_commands(faqs):
+    commands = [ CommandHandler('test', get_information) ]
+    for elem in faqs[1:]:
+        text = elem[2]
+        def handler(update: Update, context: CallbackContext, text=text) -> int:
+            update.message.reply_text(text, reply_markup=markup, parse_mode='html')
+            return MAIN_MENU
+
+        commands.append(CommandHandler(elem[0], handler))
+    return commands
 
 def write_substate_text(substate: int, update: Update, context: CallbackContext):
     text = substate_data[context.user_data['substate']]['text']
@@ -245,6 +256,9 @@ def main() -> None:
         }
     )
 
+    faqs = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
+    faq_commands = get_faq_commands(faqs)
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -253,6 +267,7 @@ def main() -> None:
                 MessageHandler(Filters.regex(f"^{resource['info']}$"), get_information),
                 MessageHandler(Filters.regex(f"^{resource['faq']}$"), faq),
                 CommandHandler('admin', register_admin),
+                *faq_commands
             ],
         },
         fallbacks=[MessageHandler(Filters.regex(f"^{resource['done']}$"), done)],
