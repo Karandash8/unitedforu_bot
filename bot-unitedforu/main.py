@@ -79,10 +79,10 @@ def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
     data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
     text = resource['info'] + ".\n"
-    for elem in data[1:]:
+    for elem in data:
         text += elem[1] + "\n"
 
-    update.message.reply_text(text, reply_markup=markup)
+    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
 
 def faq(update: Update, context: CallbackContext) -> int:
@@ -90,10 +90,21 @@ def faq(update: Update, context: CallbackContext) -> int:
     data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
     text = resource['faq'] + ".\n"
     for elem in data[1:]:
-        text += elem[1] + "\n"
+        text += f"/{elem[0]} - {elem[1]}\n"
 
-    update.message.reply_text(text, reply_markup=markup)
+    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
+
+def get_faq_commands(faqs):
+    commands = [ CommandHandler('test', get_information) ]
+    for elem in faqs[1:]:
+        text = elem[2]
+        def handler(update: Update, context: CallbackContext, text=text) -> int:
+            update.message.reply_text(text, reply_markup=markup, parse_mode='html')
+            return MAIN_MENU
+
+        commands.append(CommandHandler(elem[0], handler))
+    return commands
 
 def write_substate_text(substate: int, update: Update, context: CallbackContext):
     text = substate_data[context.user_data['substate']]['text']
@@ -101,6 +112,11 @@ def write_substate_text(substate: int, update: Update, context: CallbackContext)
 
 def handle_reply(update: Update, context: CallbackContext) -> int:
     logger.info(">> func handle_reply {}".format(context.user_data['substate']))
+
+    if update.message.text == resource['back']:
+        context.user_data['substate'] = ids[-1]
+        write_substate_text(context.user_data['substate'], update, context)
+        return DONE_SUBCONV
 
     if "qa" not in context.user_data:
         context.user_data['qa'] = {}
@@ -144,11 +160,14 @@ def get_ids(questions, start):
     return ids
 
 def get_states(questions, ids):
+    reply_keyboard = [[resource['back']]]
+    back_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
     states = {}
     for index, id in enumerate(ids):
         states[id] = {
             "text": questions[index][0],
-            "markup": None if index < len(ids) - 1 else markup
+            "markup": back_markup if index < len(ids) - 1 else markup
         }
     return states
 
@@ -204,6 +223,10 @@ def done(update: Update, context: CallbackContext) -> int:
     
     return ConversationHandler.END
 
+def back(update: Update, context: CallbackContext) -> int:
+    logger.info(">> func back")
+    return DONE_SUBCONV
+
 def main() -> None:
     """Run the bot."""
 
@@ -245,6 +268,9 @@ def main() -> None:
         }
     )
 
+    faqs = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
+    faq_commands = get_faq_commands(faqs)
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -253,6 +279,7 @@ def main() -> None:
                 MessageHandler(Filters.regex(f"^{resource['info']}$"), get_information),
                 MessageHandler(Filters.regex(f"^{resource['faq']}$"), faq),
                 CommandHandler('admin', register_admin),
+                *faq_commands
             ],
         },
         fallbacks=[MessageHandler(Filters.regex(f"^{resource['done']}$"), done)],
