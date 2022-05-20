@@ -129,7 +129,7 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
 
     if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
-    else: 
+    else:
         return ask_for_help_finish(update, context)
 
 def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
@@ -140,6 +140,7 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
         'first_name'    : chat['first_name'],
         'last_name'     : chat['last_name'],
         'telegram_id'   : chat['id'],
+        'telegram_user' : f"https://t.me/{chat['username']}" if chat['username'] else "None",
         'time'          : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     values.update(context.user_data['qa'])
