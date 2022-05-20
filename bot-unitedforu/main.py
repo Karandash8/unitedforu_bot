@@ -72,7 +72,14 @@ def ask_for_help_start(update: Update, context: CallbackContext) -> int:
 
     update.message.reply_text(resource['give_info'])
     context.user_data['substate'] = ids[0]
-    write_substate_text(context.user_data['substate'], update, context)
+
+    reply_keyboard = [
+        [resource['yes'], resource['no']],
+        [resource['back']],
+    ]
+    yes_no_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
+    write_substate_text(context.user_data['substate'], update, yes_no_markup)
     return context.user_data['substate']
 
 def get_information(update: Update, context: CallbackContext) -> int:
@@ -106,14 +113,16 @@ def get_faq_commands(faqs):
         commands.append(CommandHandler(elem[0], handler))
     return commands
 
-def write_substate_text(substate: int, update: Update, context: CallbackContext):
+def write_substate_text(substate: int, update: Update, markup=None):
     text = substate_data[substate]['text']
-    update.message.reply_text(text, reply_markup=substate_data[substate]['markup'])
+    update.message.reply_text(text,
+        reply_markup=markup if markup else substate_data[substate]['markup'])
 
 def handle_reply(update: Update, context: CallbackContext) -> int:
     logger.info(">> func handle_reply {}".format(context.user_data['substate']))
 
-    if update.message.text == resource['back']:
+    if (update.message.text == resource['back']) or \
+        (context.user_data['substate'] == ids[0] and update.message.text != resource['yes']):
         context.user_data['substate'] = ids[-1]
         update.message.reply_text(resource['back_msg'],
                                   reply_markup=substate_data[context.user_data['substate']]['markup'])
@@ -125,7 +134,7 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
     context.user_data['qa'][substate_data[context.user_data['substate']]['text']] = update.message.text
 
     context.user_data['substate'] += 1
-    write_substate_text(context.user_data['substate'], update, context)
+    write_substate_text(context.user_data['substate'], update)
 
     if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
