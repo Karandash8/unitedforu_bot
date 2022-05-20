@@ -107,15 +107,16 @@ def get_faq_commands(faqs):
     return commands
 
 def write_substate_text(substate: int, update: Update, context: CallbackContext):
-    text = substate_data[context.user_data['substate']]['text']
-    update.message.reply_text(text, reply_markup=substate_data[context.user_data['substate']]['markup'])
+    text = substate_data[substate]['text']
+    update.message.reply_text(text, reply_markup=substate_data[substate]['markup'])
 
 def handle_reply(update: Update, context: CallbackContext) -> int:
     logger.info(">> func handle_reply {}".format(context.user_data['substate']))
 
     if update.message.text == resource['back']:
         context.user_data['substate'] = ids[-1]
-        write_substate_text(context.user_data['substate'], update, context)
+        update.message.reply_text(resource['back_msg'],
+                                  reply_markup=substate_data[context.user_data['substate']]['markup'])
         return DONE_SUBCONV
 
     if "qa" not in context.user_data:
@@ -236,7 +237,7 @@ def main() -> None:
     logger.info(resource)
 
     reply_keyboard = [
-        [resource['ask_help'], resource['info'], resource['faq']],
+        [resource['ask_help'], resource['faq'], resource['info']],
         [resource['done']],
     ]
     global markup
