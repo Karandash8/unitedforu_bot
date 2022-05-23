@@ -72,7 +72,14 @@ def ask_for_help_start(update: Update, context: CallbackContext) -> int:
 
     update.message.reply_text(resource['give_info'])
     context.user_data['substate'] = ids[0]
-    write_substate_text(context.user_data['substate'], update, context)
+
+    reply_keyboard = [
+        [resource['yes'], resource['no']],
+        [resource['back']],
+    ]
+    yes_no_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
+    write_substate_text(context.user_data['substate'], update, yes_no_markup)
     return context.user_data['substate']
 
 def get_information(update: Update, context: CallbackContext) -> int:
@@ -106,16 +113,19 @@ def get_faq_commands(faqs):
         commands.append(CommandHandler(elem[0], handler))
     return commands
 
-def write_substate_text(substate: int, update: Update, context: CallbackContext):
-    text = substate_data[context.user_data['substate']]['text']
-    update.message.reply_text(text, reply_markup=substate_data[context.user_data['substate']]['markup'])
+def write_substate_text(substate: int, update: Update, markup=None):
+    text = substate_data[substate]['text']
+    update.message.reply_text(text,
+        reply_markup=markup if markup else substate_data[substate]['markup'])
 
 def handle_reply(update: Update, context: CallbackContext) -> int:
     logger.info(">> func handle_reply {}".format(context.user_data['substate']))
 
-    if update.message.text == resource['back']:
+    if (update.message.text == resource['back']) or \
+        (context.user_data['substate'] == ids[0] and update.message.text != resource['yes']):
         context.user_data['substate'] = ids[-1]
-        write_substate_text(context.user_data['substate'], update, context)
+        update.message.reply_text(resource['back_msg'],
+                                  reply_markup=substate_data[context.user_data['substate']]['markup'])
         return DONE_SUBCONV
 
     if "qa" not in context.user_data:
@@ -124,11 +134,11 @@ def handle_reply(update: Update, context: CallbackContext) -> int:
     context.user_data['qa'][substate_data[context.user_data['substate']]['text']] = update.message.text
 
     context.user_data['substate'] += 1
-    write_substate_text(context.user_data['substate'], update, context)
+    write_substate_text(context.user_data['substate'], update)
 
     if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
-    else: 
+    else:
         return ask_for_help_finish(update, context)
 
 def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
@@ -139,6 +149,7 @@ def ask_for_help_finish(update: Update, context: CallbackContext) -> int:
         'first_name'    : chat['first_name'],
         'last_name'     : chat['last_name'],
         'telegram_id'   : chat['id'],
+        'telegram_user' : f"https://t.me/{chat['username']}" if chat['username'] else "None",
         'time'          : datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     values.update(context.user_data['qa'])
@@ -236,7 +247,7 @@ def main() -> None:
     logger.info(resource)
 
     reply_keyboard = [
-        [resource['ask_help'], resource['info'], resource['faq']],
+        [resource['ask_help'], resource['faq'], resource['info']],
         [resource['done']],
     ]
     global markup
