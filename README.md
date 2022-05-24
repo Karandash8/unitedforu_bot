@@ -20,9 +20,15 @@ make build
 ```
 make run
 ```
+## BUILD MULTIPLATFORM (amd64, arm64)
+```
+docker buildx create --use
+
+make build_and_push_multiplatform
+```
 
 ## DEBUG mode
-During development, *build & run* might be an overkill to do on every code change. In order to avoid rebuilding the image every time, there is a Makefile target to mount  mount local bot folder inside the container.
+During development, *build & run* might be an overkill to do on every code change. In order to avoid rebuilding the image every time, there is a Makefile target to mount local bot folder inside the container.
 ```
 make debug && docker container logs unitedforu-bot -f
 ```

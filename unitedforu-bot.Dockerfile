@@ -5,6 +5,8 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         debconf-utils \
         apt-utils \
+        gcc \
+        g++ \
     && echo 'tzdata tzdata/Areas select Europe' | debconf-set-selections \
     && echo 'tzdata tzdata/Zones/Europe select Paris' | debconf-set-selections \
     && DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
@@ -18,6 +20,7 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install --no-install-recommends -y \
         python3.8 \
+        python3.8-dev \
         python3-pip \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1 \
     && update-alternatives --install /usr/bin/python python /usr/bin/python3.8 1

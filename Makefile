@@ -17,6 +17,17 @@ build :
 		make run ; \
 	fi
 
+# build uniedforu-bot images for all platforms
+# after build, an image for the last specified platform will be tagged with IMAGE_TAG locally
+build_and_push_multiplatform : CONTAINER_STATUS := `docker container ls -a | grep $(CONTAINER_NAME)`
+build_and_push_multiplatform :
+	@echo "Building unitedforu-bot images (linux/amd64, linux/arm64)"
+	@docker buildx build --platform linux/arm64,linux/amd64 --tag $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) --push .
+	@echo "Done"
+	@if [ -n "$(CONTAINER_STATUS)" ] ; then \
+		make run ; \
+	fi
+
 # delete local uniedforu-bot image
 clean : CONTAINER_STATUS := `docker container ls -a | grep $(CONTAINER_NAME)`
 clean :
@@ -25,12 +36,6 @@ clean :
 	fi
 	@echo "Deleting unitedforu-bot image"
 	@docker image rm $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
-	@echo "Done"
-
-# push uniedforu-bot image o the registry
-push :
-	@echo "Pushing unitedforu-bot image to the registry"
-	docker push $(DOCKERHUB_ACCOUNT)/$(IMAGE_NAME):$(IMAGE_TAG)
 	@echo "Done"
 
 # run a container from unitedforu-bot image
