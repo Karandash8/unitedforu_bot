@@ -3,14 +3,15 @@ import logging
 from datetime import datetime
 from typing import Dict
 
-from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    Updater,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    Filters,
+    CallbackQueryHandler,
     ConversationHandler,
     CallbackContext,
+    filters
 )
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -44,14 +45,14 @@ substate_data = {}
 resource = {}
 markup = None
 
-def start(update: Update, context: CallbackContext) -> int:
+async def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and ask user for input."""
     logger.info(">> func start")
 
-    update.message.reply_text(resource['hello'], reply_markup=markup)
+    await update.message.reply_text(resource['hello'], reply_markup=markup)
     return MAIN_MENU
 
-def register_admin(update: Update, context: CallbackContext) -> int:
+async def register_admin(update: Update, context: CallbackContext) -> int:
     logger.info(">> func register_admin")
 
     list_of_admin_ids = TELEGRAM_LIST_OF_ADMIN_IDS.split(',') if TELEGRAM_LIST_OF_ADMIN_IDS else []
@@ -60,81 +61,94 @@ def register_admin(update: Update, context: CallbackContext) -> int:
 
     if user_id in list_of_admin_ids:
         ADMINS_ONLINE.append(user_id)
+        await update.message.reply_text("You logged in as an admin.", reply_markup=markup)
 
-        update.message.reply_text(
-            "You logged in as an admin.",
-            reply_markup=markup)
     return MAIN_MENU
 
-def ask_for_help_start(update: Update, context: CallbackContext) -> int:
+async def ask_for_help_start(update: Update, context: CallbackContext) -> int:
     """The user wants to ask for help. Child conversation gathers all necessary info"""
     logger.info(">> func ask_for_help_start")
 
-    update.message.reply_text(resource['give_info'])
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(resource['give_info'], parse_mode='html')
     context.user_data['substate'] = ids[0]
 
     reply_keyboard = [
-        [resource['yes'], resource['no']],
-        [resource['back']],
+        [ InlineKeyboardButton(resource['yes'], callback_data='yes'),
+          InlineKeyboardButton(resource['no'], callback_data='no')
+        ],
+        [ InlineKeyboardButton(resource['back'], callback_data='back') ]
     ]
-    yes_no_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-
-    write_substate_text(context.user_data['substate'], update, yes_no_markup)
+    yes_no_markup = InlineKeyboardMarkup(reply_keyboard)
+    await write_substate_text(context.user_data['substate'], query.message, yes_no_markup)
     return context.user_data['substate']
 
-def get_information(update: Update, context: CallbackContext) -> int:
+async def get_information(update: Update, context: CallbackContext) -> int:
     logger.info(">> func get_information")
     data = read_spreadsheet(LOAD_SHEET_ID, INFO_SHEET_RANGE)
     text = resource['info'] + ".\n"
     for elem in data:
         text += elem[1] + "\n"
 
-    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
 
-def faq(update: Update, context: CallbackContext) -> int:
+async def faq(update: Update, context: CallbackContext) -> int:
     logger.info(">> func faq")
     data = read_spreadsheet(LOAD_SHEET_ID, FAQ_SHEET_RANGE)
     text = resource['faq'] + ".\n"
     for elem in data[1:]:
         text += f"/{elem[0]} - {elem[1]}\n"
 
-    update.message.reply_text(text, reply_markup=markup, parse_mode='html')
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(text, reply_markup=markup, parse_mode='html')
     return MAIN_MENU
 
 def get_faq_commands(faqs):
-    commands = [ CommandHandler('test', get_information) ]
+    commands = []
     for elem in faqs[1:]:
         text = elem[2]
-        def handler(update: Update, context: CallbackContext, text=text) -> int:
-            update.message.reply_text(text, reply_markup=markup, parse_mode='html')
+        async def handler(update: Update, context: CallbackContext, text=text) -> int:
+            await update.message.reply_text(text, reply_markup=markup, parse_mode='html')
             return MAIN_MENU
 
         commands.append(CommandHandler(elem[0], handler))
     return commands
 
-def write_substate_text(substate: int, update: Update, markup=None):
+async def write_substate_text(substate: int, message, markup=None):
     text = substate_data[substate]['text']
-    update.message.reply_text(text,
+    await message.reply_text(text,
         reply_markup=markup if markup else substate_data[substate]['markup'])
 
-def handle_reply(update: Update, context: CallbackContext) -> int:
-    logger.info(">> func handle_reply {}".format(context.user_data['substate']))
+async def handle_callback(update: Update, context: CallbackContext) -> int:
+    logger.info(">> func handle_callback {}".format(context.user_data['substate']))
 
-    if (update.message.text == resource['back']) or \
-        (context.user_data['substate'] == ids[0] and update.message.text != resource['yes']):
+    query = update.callback_query
+    await query.answer()
+    if (query.data == 'back') or \
+        (context.user_data['substate'] == ids[0] and query.data != 'yes'):
         context.user_data['substate'] = ids[-1]
-        update.message.reply_text(resource['back_msg'],
-                                  reply_markup=substate_data[context.user_data['substate']]['markup'])
+        await query.message.reply_text(resource['back_msg'],
+                    reply_markup=substate_data[context.user_data['substate']]['markup'])
         return DONE_SUBCONV
+
+    context.user_data['substate'] += 1
+    await write_substate_text(context.user_data['substate'], query.message)
+    return context.user_data['substate']
+
+async def handle_reply(update: Update, context: CallbackContext) -> int:
+    logger.info(">> func handle_reply {}".format(context.user_data['substate']))
 
     if "qa" not in context.user_data:
         context.user_data['qa'] = {}
-    
     context.user_data['qa'][substate_data[context.user_data['substate']]['text']] = update.message.text
 
     context.user_data['substate'] += 1
-    write_substate_text(context.user_data['substate'], update)
+    await write_substate_text(context.user_data['substate'], update.message)
 
     if context.user_data['substate'] < ids[-1]:
         return context.user_data['substate']
@@ -171,8 +185,10 @@ def get_ids(questions, start):
     return ids
 
 def get_states(questions, ids):
-    reply_keyboard = [[resource['back']]]
-    back_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    reply_keyboard = [
+        [ InlineKeyboardButton(resource['back'], callback_data='back') ]
+    ]
+    back_markup = InlineKeyboardMarkup(reply_keyboard)
 
     states = {}
     for index, id in enumerate(ids):
@@ -228,12 +244,6 @@ def store_in_spreadsheet(spreadsheet_id, values, range_name='Sheet1'):
         print(f"An error occurred: {error}")
         return error
 
-def done(update: Update, context: CallbackContext) -> int:
-    """Display the gathered info and end the conversation."""
-    logger.info(">> func done")
-    
-    return ConversationHandler.END
-
 def back(update: Update, context: CallbackContext) -> int:
     logger.info(">> func back")
     return DONE_SUBCONV
@@ -247,11 +257,12 @@ def main() -> None:
     logger.info(resource)
 
     reply_keyboard = [
-        [resource['ask_help'], resource['faq'], resource['info']],
-        [resource['done']],
+        [ InlineKeyboardButton(resource['ask_help'], callback_data='ask_help') ],
+        [ InlineKeyboardButton(resource['faq'], callback_data='faq') ],
+        [ InlineKeyboardButton(resource['info'], callback_data='info') ]
     ]
     global markup
-    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    markup = InlineKeyboardMarkup(reply_keyboard)
 
     questions = read_spreadsheet(LOAD_SHEET_ID, QUESTIONS_SHEET_RANGE)
     global ids
@@ -262,18 +273,14 @@ def main() -> None:
     substate_data = get_states(questions, ids)
     logger.info(substate_data)
 
-    # Create the Updater and pass it your bot's token.
-    updater = Updater(token=TELEGRAM_API_TOKEN)
-
-    # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
+    application = ApplicationBuilder().token(TELEGRAM_API_TOKEN).build()
 
     ask_for_help_conv = ConversationHandler(
         entry_points=[
-            MessageHandler(Filters.regex(f"^{resource['ask_help']}$"), ask_for_help_start),
+            CallbackQueryHandler(ask_for_help_start, "^ask_help$")
         ],
-        states = { id : [ MessageHandler(Filters.text, handle_reply) ] for id in ids },
-        fallbacks=[MessageHandler(Filters.text, ask_for_help_finish)],
+        states = { id : [ MessageHandler(filters.TEXT, handle_reply) ] for id in ids },
+        fallbacks=[ CallbackQueryHandler(handle_callback) ],
         map_to_parent={
             DONE_SUBCONV: MAIN_MENU
         }
@@ -287,20 +294,17 @@ def main() -> None:
         states={
             MAIN_MENU: [
                 ask_for_help_conv,
-                MessageHandler(Filters.regex(f"^{resource['info']}$"), get_information),
-                MessageHandler(Filters.regex(f"^{resource['faq']}$"), faq),
+                CallbackQueryHandler(get_information, "^info$"),
+                CallbackQueryHandler(faq, "^faq$"),
                 CommandHandler('admin', register_admin),
-                *faq_commands
+               *faq_commands
             ],
         },
-        fallbacks=[MessageHandler(Filters.regex(f"^{resource['done']}$"), done)],
+        fallbacks=[CommandHandler('start', start)],
     )
 
-    dispatcher.add_handler(conv_handler)
-
-    # Start the Bot
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(conv_handler)
+    application.run_polling()
 
 
 if __name__ == '__main__':

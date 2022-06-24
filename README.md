@@ -38,7 +38,7 @@ make debug && docker container logs unitedforu-bot -f
 ```
 python3 -m venv venv
 . venv/bin/activate
-pip install python-telegram-bot
+pip install python-telegram-bot --pre
 pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
 ```
 ## RUN
