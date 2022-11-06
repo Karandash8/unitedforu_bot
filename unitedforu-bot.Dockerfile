@@ -36,7 +36,7 @@ RUN apt-get update \
 # install ansible
 RUN pip3 install --upgrade pip \
     && pip3 install setuptools \
-    && pip3 install python-telegram-bot \
+    && pip3 install python-telegram-bot --pre \
     && pip3 install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
 COPY ./bot-unitedforu /bot-unitedforu
